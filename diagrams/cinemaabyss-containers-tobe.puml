@@ -1,0 +1,83 @@
+@startuml cinemaabyss-containers-tobe
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/v2.14.0/C4_Container.puml
+
+title диаграмма контейнеров to-be
+
+Person(user, "пользователь", "смотрит фильмы с ноутбука, смарт тв или телефона")
+
+System_Boundary(cinema, "кинобездна") {
+    Container(apps, "клиентские приложения", "web, ios, android, smart tv", "интерфейс и объём данных под тип устройства")
+    Container(gateway, "api gateway", "go, proxy-service", "единая точка входа: маршрутизация запросов по доменам, постепенный перевод трафика по фиче-флагу")
+
+    Boundary(users_domain, "пользователи") {
+        Container(users_svc, "users-service", "go", "регистрация, вход, профиль, избранное")
+        ContainerDb(users_db, "users-db", "postgresql")
+    }
+
+    Boundary(movies_domain, "метаданные фильмов") {
+        Container(movies_svc, "movies-service", "go", "фильмы, жанры, актёры, оценки, подборки")
+        ContainerDb(movies_db, "movies-db", "postgresql")
+    }
+
+    Boundary(events_domain, "события") {
+        Container(events_svc, "events-service", "go", "приём событий клиентов по api")
+        ContainerQueue(kafka, "kafka", "kafka", "user-events, payment-events, movie-events")
+    }
+
+    Boundary(payments_domain, "платежи") {
+        Container(payments_svc, "payments-service", "go", "оплата подписок")
+        ContainerDb(payments_db, "payments-db", "postgresql")
+    }
+
+    Boundary(subscriptions_domain, "подписки") {
+        Container(subscriptions_svc, "subscriptions-service", "go", "тарифы, подписки, скидки")
+        ContainerDb(subscriptions_db, "subscriptions-db", "postgresql")
+    }
+
+    Boundary(content_domain, "контент") {
+        Container(content_svc, "content-service", "go", "видео и доступ к просмотру")
+        ContainerDb(content_db, "content-db", "postgresql")
+    }
+}
+
+System_Ext(recsys, "рекомендательная система", "внешняя, обмен через свой rabbitmq")
+System_Ext(payment_system, "платёжная система")
+System_Ext(s3, "s3", "видеофайлы")
+System_Ext(cinemas, "онлайн-кинотеатры", "контент партнёров")
+
+Rel(user, apps, "использует")
+Rel(apps, gateway, "все запросы", "https, rest")
+
+Rel(gateway, users_svc, "пользователи", "rest")
+Rel(gateway, movies_svc, "фильмы", "rest")
+Rel(gateway, events_svc, "события просмотра", "rest")
+Rel(gateway, payments_svc, "оплата", "rest")
+Rel(gateway, subscriptions_svc, "подписки", "rest")
+Rel(gateway, content_svc, "просмотр", "rest")
+
+Rel(users_svc, users_db, "читает и пишет", "sql")
+Rel(movies_svc, movies_db, "читает и пишет", "sql")
+Rel(payments_svc, payments_db, "читает и пишет", "sql")
+Rel(subscriptions_svc, subscriptions_db, "читает и пишет", "sql")
+Rel(content_svc, content_db, "читает и пишет", "sql")
+
+Rel(users_svc, kafka, "публикует user-events", "kafka")
+Rel(movies_svc, kafka, "читает movie-events", "kafka")
+Rel(events_svc, kafka, "публикует movie-events", "kafka")
+Rel(payments_svc, kafka, "публикует payment-events", "kafka")
+Rel(subscriptions_svc, kafka, "читает payment-events", "kafka")
+
+Rel_L(content_svc, subscriptions_svc, "проверяет подписку", "rest")
+
+Rel(movies_svc, recsys, "отправляет просмотры и оценки, получает подборки", "rabbitmq")
+Rel(payments_svc, payment_system, "проводит платежи", "https")
+Rel(content_svc, s3, "видеофайлы", "https")
+Rel(content_svc, cinemas, "контент партнёров", "https")
+
+Lay_D(movies_db, recsys)
+Lay_D(payments_db, payment_system)
+Lay_D(content_db, s3)
+Lay_D(content_db, cinemas)
+
+SHOW_LEGEND()
+@enduml

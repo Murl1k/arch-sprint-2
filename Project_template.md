@@ -5,7 +5,10 @@
 1. Спроектируйте to be архитектуру КиноБездны, разделив всю систему на отдельные домены и организовав интеграционное взаимодействие и единую точку вызова сервисов.
 Результат представьте в виде контейнерной диаграммы в нотации С4.
 Добавьте ссылку на файл в этот шаблон
-[ссылка на файл](ссылка)
+[диаграмма контейнеров to-be](diagrams/cinemaabyss-containers-tobe.png), исходник [cinemaabyss-containers-tobe.puml](diagrams/cinemaabyss-containers-tobe.puml)
+
+домены вынесены в отдельные сервисы со своими базами: пользователи, метаданные фильмов, контент, подписки, платежи, события
+клиенты ходят только через api gateway, синхронные вызовы идут по rest, события между доменами через kafka
 
 # Задание 2
 
@@ -46,6 +49,13 @@
    ```
 - Протестируйте постепенный переход, изменив переменную окружения MOVIES_MIGRATION_PERCENT в файле docker-compose.yml.
 
+прокси на go в src/microservices/proxy:
+- /api/movies уходит в movies-service с вероятностью MOVIES_MIGRATION_PERCENT, остальное в монолит
+- при GRADUAL_MIGRATION=false весь /api/movies идёт в movies-service
+- /api/events/ идёт в events-service, остальные запросы в монолит
+
+монолиту и movies-service в docker-compose добавлен restart: on-failure, без него на первом запуске они падают, пока postgres создаёт базу
+
 
 ### 2. Kafka
  Вам как архитектуру нужно также проверить гипотезу насколько просто реализовать применение Kafka в данной архитектуре.
@@ -58,6 +68,14 @@
 
 Необходимые тесты для проверки этого API вызываются при запуске npm run test:local из папки tests/postman 
 Приложите скриншот тестов и скриншот состояния топиков Kafka из UI http://localhost:8090 
+
+сервис events на go в src/microservices/events, клиент kafka sarama:
+- POST /api/events/movie, /api/events/user и /api/events/payment публикуют событие в топики movie-events, user-events и payment-events
+- consumer группы events-service читает эти топики и пишет каждое событие в лог
+
+![тесты](screenshots/task2-postman-tests.png)
+
+![топики kafka](screenshots/task2-kafka-topics.png)
 
 # Задание 3
 
@@ -108,6 +126,8 @@ jobs:
 ```
 Как только сборка отработает и в github registry появятся ваши образы, можно переходить к блоку настройки Kubernetes
 Успешным результатом данного шага является "зеленая" сборка и "зеленые" тесты
+
+в docker-build-push.yml добавлены сборка и публикация образов events-service и proxy-service, сборка запускается и на пуш в ветку cinema
 
 
 ### Proxy в Kubernetes
@@ -275,6 +295,14 @@ cat .docker/config.json | base64
 #### Шаг 3
 Добавьте сюда скриншота вывода при вызове https://cinemaabyss.example.com/api/movies и  скриншот вывода event-service после вызова тестов.
 
+в src/kubernetes добавлены deployment и service для events-service и proxy-service, ingress отправляет / в proxy-service, /api/events в events-service, в configmap добавлен EVENTS_SERVICE_URL
+
+пакеты в ghcr публичные, поэтому в dockerconfigsecret.yaml и в imagePullSecrets чарта лежит пустой конфиг {"auths":{}} без токена
+
+![вывод /api/movies](screenshots/task3-api-movies.png)
+
+![логи events-service](screenshots/task3-events-logs.png)
+
 
 # Задание 4
 Для простоты дальнейшего обновления и развертывания вам как архитектуру необходимо так же реализовать helm-чарты для прокси-сервиса и проверить работу 
@@ -349,6 +377,12 @@ minikube tunnel
 Потом вызовите 
 https://cinemaabyss.example.com/api/movies
 и приложите скриншот развертывания helm и вывода https://cinemaabyss.example.com/api/movies
+
+шаблоны proxy-service и events-service заполнены по манифестам из задания 3, в values.yaml пути к своим образам, в configmap чарта исправлен адрес movies-service (был movies) и добавлен EVENTS_SERVICE_URL
+
+![helm install](screenshots/task4-helm-install.png)
+
+![вывод /api/movies](screenshots/task4-api-movies.png)
 
 ## Удаляем все
 
